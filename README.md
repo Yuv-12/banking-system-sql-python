@@ -25,4 +25,30 @@ The project demonstrates ACID-compliant transactions and secure database handlin
 
 ## Setup Instructions
 
-1. Clone the repository:
+1. Clone the repository: git clone https://github.com/Yuv-12/banking-system-sql-python.git
+   
+2. Install dependencies: pip install -r requirements.txt
+    
+3. Setup database:
+- Open MySQL
+- Run `sql/schema.sql`
+
+4. Configure database:
+- Copy `config/config.py.example` → `config/config.py`
+- Update credentials
+
+5. Run the project: python src/banking_system.py
+
+
+## Key Concepts Demonstrated
+- SQL transactions and rollback
+- Row-level locking (`FOR UPDATE`)
+- Decimal handling for financial accuracy
+- Input validation and error handling
+- Secure parameterized queries
+
+## Author
+Yuvraj Gupta
+
+
+

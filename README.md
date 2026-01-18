@@ -30,12 +30,12 @@ The project demonstrates ACID-compliant transactions and secure database handlin
 2. Install dependencies: pip install -r requirements.txt
     
 3. Setup database:
-- Open MySQL
-- Run `sql/schema.sql`
+   - Open MySQL
+   - Run `sql/schema.sql`
 
 4. Configure database:
-- Copy `config/config.py.example` → `config/config.py`
-- Update credentials
+   - Copy `config/config.py.example` → `config/config.py`
+   - Update credentials
 
 5. Run the project: python src/banking_system.py
 

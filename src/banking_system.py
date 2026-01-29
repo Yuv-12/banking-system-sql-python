@@ -228,15 +228,8 @@ def transaction_history():
         print(f"{t_type}\t{amt}\t{date}")
 
 
-# ---------------- Search Menu (SECURITY FIXED) ----------------
+# ---------------- Search Menu ----------------
 def search_menu():
-    base_sql = """
-        SELECT a.account_no, c.full_name, c.phone, c.email,
-               a.account_type, a.balance, a.status
-        FROM accounts a
-        JOIN customers c ON a.customer_id = c.customer_id
-    """
-
     while True:
         print("\n----- Search Menu -----")
         print("1. Account Number")
@@ -256,16 +249,43 @@ def search_menu():
 
         if choice == 1:
             value = input("Enter account number: ")
-            sql = base_sql + " WHERE a.account_no = %s"
+            sql = """
+                SELECT a.account_no, c.full_name, c.phone, c.email,
+                       a.account_type, a.balance, a.status
+                FROM accounts a
+                JOIN customers c ON a.customer_id = c.customer_id
+                WHERE a.account_no = %s
+            """
+
         elif choice == 2:
             value = f"%{input('Enter name: ')}%"
-            sql = base_sql + " WHERE c.full_name LIKE %s"
+            sql = """
+                SELECT a.account_no, c.full_name, c.phone, c.email,
+                       a.account_type, a.balance, a.status
+                FROM accounts a
+                JOIN customers c ON a.customer_id = c.customer_id
+                WHERE c.full_name LIKE %s
+            """
+
         elif choice == 3:
             value = input("Enter phone number: ")
-            sql = base_sql + " WHERE c.phone = %s"
+            sql = """
+                SELECT a.account_no, c.full_name, c.phone, c.email,
+                       a.account_type, a.balance, a.status
+                FROM accounts a
+                JOIN customers c ON a.customer_id = c.customer_id
+                WHERE c.phone = %s
+            """
+
         elif choice == 4:
             value = input("Enter email: ")
-            sql = base_sql + " WHERE c.email = %s"
+            sql = """
+                SELECT a.account_no, c.full_name, c.phone, c.email,
+                       a.account_type, a.balance, a.status
+                FROM accounts a
+                JOIN customers c ON a.customer_id = c.customer_id
+                WHERE c.email = %s
+            """
         else:
             print("Invalid choice.")
             continue

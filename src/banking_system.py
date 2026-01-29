@@ -45,8 +45,7 @@ def create_account():
             (customer_id, account_type, opening_balance)
         )
 
-        cursor.execute("SELECT LAST_INSERT_ID() AS id")
-
+        cursor.execute("SELECT LAST_INSERT_ID()")
         account_no = cursor.fetchone()[0]
 
         conn.commit()
@@ -223,10 +222,11 @@ def transaction_history():
         print("No transactions found.")
         return
 
-    print("\nType\t\tAmount\t\tDate")
-    print("-" * 45)
+    print(f"{'Type':<12}{'Amount':>12}{'Date':>22}")
+    print("-" * 46)
+
     for t_type, amt, date in records:
-        print(f"{t_type}\t{amt}\t{date}")
+        print(f"{t_type:<12}{amt:>12.2f}{str(date):>22}")
 
 
 # ---------------- Search Menu ----------------
@@ -250,49 +250,29 @@ def search_menu():
 
         if choice == 1:
             value = input("Enter account number: ")
-            cursor.execute("""
-                SELECT a.account_no, c.full_name, c.phone, c.email,
-                       a.account_type, a.balance, a.status
-                FROM accounts a
-                JOIN customers c ON a.customer_id = c.customer_id
-                WHERE a.account_no = %s
-            """, (value,))
-
+            query = "WHERE a.account_no = %s"
         elif choice == 2:
             value = f"%{input('Enter name: ')}%"
-            cursor.execute("""
-                SELECT a.account_no, c.full_name, c.phone, c.email,
-                       a.account_type, a.balance, a.status
-                FROM accounts a
-                JOIN customers c ON a.customer_id = c.customer_id
-                WHERE c.full_name LIKE %s
-            """, (value,))
-
+            query = "WHERE c.full_name LIKE %s"
         elif choice == 3:
             value = input("Enter phone number: ")
-            cursor.execute("""
-                SELECT a.account_no, c.full_name, c.phone, c.email,
-                       a.account_type, a.balance, a.status
-                FROM accounts a
-                JOIN customers c ON a.customer_id = c.customer_id
-                WHERE c.phone = %s
-            """, (value,))
-
+            query = "WHERE c.phone = %s"
         elif choice == 4:
             value = input("Enter email: ")
-            cursor.execute("""
-                SELECT a.account_no, c.full_name, c.phone, c.email,
-                       a.account_type, a.balance, a.status
-                FROM accounts a
-                JOIN customers c ON a.customer_id = c.customer_id
-                WHERE c.email = %s
-            """, (value,))
+            query = "WHERE c.email = %s"
         else:
             print("Invalid choice.")
             continue
 
-        rows = cursor.fetchall()
+        cursor.execute(f"""
+            SELECT a.account_no, c.full_name, c.phone, c.email,
+                   a.account_type, a.balance, a.status
+            FROM accounts a
+            JOIN customers c ON a.customer_id = c.customer_id
+            {query}
+        """, (value,))
 
+        rows = cursor.fetchall()
         if not rows:
             print("No records found.")
             continue

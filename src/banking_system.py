@@ -45,7 +45,8 @@ def create_account():
             (customer_id, account_type, opening_balance)
         )
 
-        cursor.execute("SELECT LAST_INSERT_ID()")
+        cursor.execute("SELECT LAST_INSERT_ID() AS id")
+
         account_no = cursor.fetchone()[0]
 
         conn.commit()

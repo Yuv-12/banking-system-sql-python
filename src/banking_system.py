@@ -249,48 +249,47 @@ def search_menu():
 
         if choice == 1:
             value = input("Enter account number: ")
-            sql = """
+            cursor.execute("""
                 SELECT a.account_no, c.full_name, c.phone, c.email,
                        a.account_type, a.balance, a.status
                 FROM accounts a
                 JOIN customers c ON a.customer_id = c.customer_id
                 WHERE a.account_no = %s
-            """
+            """, (value,))
 
         elif choice == 2:
             value = f"%{input('Enter name: ')}%"
-            sql = """
+            cursor.execute("""
                 SELECT a.account_no, c.full_name, c.phone, c.email,
                        a.account_type, a.balance, a.status
                 FROM accounts a
                 JOIN customers c ON a.customer_id = c.customer_id
                 WHERE c.full_name LIKE %s
-            """
+            """, (value,))
 
         elif choice == 3:
             value = input("Enter phone number: ")
-            sql = """
+            cursor.execute("""
                 SELECT a.account_no, c.full_name, c.phone, c.email,
                        a.account_type, a.balance, a.status
                 FROM accounts a
                 JOIN customers c ON a.customer_id = c.customer_id
                 WHERE c.phone = %s
-            """
+            """, (value,))
 
         elif choice == 4:
             value = input("Enter email: ")
-            sql = """
+            cursor.execute("""
                 SELECT a.account_no, c.full_name, c.phone, c.email,
                        a.account_type, a.balance, a.status
                 FROM accounts a
                 JOIN customers c ON a.customer_id = c.customer_id
                 WHERE c.email = %s
-            """
+            """, (value,))
         else:
             print("Invalid choice.")
             continue
 
-        cursor.execute(sql, (value,))
         rows = cursor.fetchall()
 
         if not rows:

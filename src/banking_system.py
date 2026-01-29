@@ -1,6 +1,7 @@
 from config import DB_CONFIG
 import mysql.connector
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import sys
 
 MIN_BALANCE = Decimal("1000.00")
 
@@ -13,29 +14,37 @@ def parse_money(prompt):
         if val <= 0:
             raise InvalidOperation
         return val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    except InvalidOperation:
+    except (InvalidOperation, ValueError):
         print("Invalid monetary amount.")
         return None
 
 
+def parse_int(prompt):
+    try:
+        return int(input(prompt).strip())
+    except ValueError:
+        print("Invalid number.")
+        return None
+
+
 def valid_email(e):
-    return "@" in e and "." in e
+    return "@" in e and "." in e and len(e) >= 5
 
 
 def valid_phone(p):
     return p.isdigit() and len(p) == 10
 
 
-# ---------------- Database Connection ----------------
+# ---------------- DB Connect ----------------
 
 try:
     conn = mysql.connector.connect(**DB_CONFIG)
     conn.autocommit = False
-    cursor = conn.cursor()
-    print("✓ Connected to bank database successfully\n")
+    cursor = conn.cursor(dictionary=True)
+    print("✓ Connected to bank database\n")
 except mysql.connector.Error as e:
-    print("Database connection error:", e)
-    exit()
+    print("DB connection error:", e)
+    sys.exit()
 
 
 # ---------------- Create Account ----------------
@@ -43,29 +52,31 @@ except mysql.connector.Error as e:
 def create_account():
     try:
         name = input("Full name: ").strip()
-        email = input("Email: ").strip()
+        email = input("Email: ").strip().lower()
         phone = input("Phone: ").strip()
         address = input("Address: ").strip()
-        acc_type = input("Account type (savings/current): ").lower().strip()
+        acc_type = input("Type (savings/current): ").lower().strip()
 
         if not name:
-            print("Name required.")
-            return
+            print("Name required."); return
         if not valid_email(email):
-            print("Invalid email.")
-            return
+            print("Invalid email."); return
         if not valid_phone(phone):
-            print("Invalid phone number.")
-            return
+            print("Invalid phone."); return
         if acc_type not in ("savings", "current"):
-            print("Invalid account type.")
+            print("Invalid account type."); return
+
+        # prevent duplicates
+        cursor.execute("SELECT 1 FROM customers WHERE email=%s OR phone=%s", (email, phone))
+        if cursor.fetchone():
+            print("Customer with email/phone already exists.")
             return
 
         opening = parse_money("Opening balance: ")
-        if opening is None:
+        if not opening:
             return
         if opening < MIN_BALANCE:
-            print(f"Minimum opening balance is {MIN_BALANCE}.")
+            print(f"Minimum opening balance is {MIN_BALANCE}")
             return
 
         cursor.execute(
@@ -88,31 +99,31 @@ def create_account():
         )
 
         conn.commit()
-        print("\n✓ Account created")
-        print("Customer ID:", cust_id)
-        print("Account No :", acc_no)
+        print(f"✓ Account created | Customer {cust_id} | Account {acc_no}")
 
     except Exception as e:
         conn.rollback()
-        print("Account creation failed:", e)
+        print("Create failed:", e)
 
 
 # ---------------- Deposit ----------------
 
 def deposit():
     try:
-        acc_no = int(input("Account number: "))
+        acc_no = parse_int("Account number: ")
+        if not acc_no: return
+
         amt = parse_money("Deposit amount: ")
-        if amt is None:
-            return
+        if not amt: return
 
         cursor.execute(
             "SELECT status FROM accounts WHERE account_no=%s FOR UPDATE",
             (acc_no,)
         )
         row = cursor.fetchone()
-        if not row or row[0] != "active":
-            print("Account not active/found.")
+        if not row or row["status"] != "active":
+            print("Account invalid/inactive.")
+            conn.rollback()
             return
 
         cursor.execute(
@@ -138,24 +149,26 @@ def deposit():
 
 def withdrawal():
     try:
-        acc_no = int(input("Account number: "))
+        acc_no = parse_int("Account number: ")
+        if not acc_no: return
+
         amt = parse_money("Withdrawal amount: ")
-        if amt is None:
-            return
+        if not amt: return
 
         cursor.execute(
             "SELECT balance,status FROM accounts WHERE account_no=%s FOR UPDATE",
             (acc_no,)
         )
         row = cursor.fetchone()
-        if not row or row[1] != "active":
-            print("Account not active/found.")
+        if not row or row["status"] != "active":
+            print("Account invalid/inactive.")
+            conn.rollback()
             return
 
-        bal = Decimal(row[0])
-
+        bal = Decimal(row["balance"])
         if bal - amt < MIN_BALANCE:
-            print(f"Minimum balance {MIN_BALANCE} must remain.")
+            print("Minimum balance violation.")
+            conn.rollback()
             return
 
         cursor.execute(
@@ -177,63 +190,53 @@ def withdrawal():
         print("Withdrawal failed:", e)
 
 
-# ---------------- Fund Transfer ----------------
+# ---------------- Transfer ----------------
 
 def fund_transfer():
     try:
-        from_acc = int(input("From account: "))
-        to_acc = int(input("To account: "))
-        if from_acc == to_acc:
-            print("Cannot transfer to same account.")
+        from_acc = parse_int("From account: ")
+        to_acc = parse_int("To account: ")
+        if not from_acc or not to_acc or from_acc == to_acc:
+            print("Invalid accounts.")
             return
 
         amt = parse_money("Transfer amount: ")
-        if amt is None:
-            return
+        if not amt: return
 
-        # deadlock-safe lock order
-        first, second = sorted([from_acc, to_acc])
+        a, b = sorted([from_acc, to_acc])
 
         cursor.execute(
             "SELECT account_no,balance,status FROM accounts "
             "WHERE account_no IN (%s,%s) FOR UPDATE",
-            (first, second)
+            (a, b)
         )
         rows = cursor.fetchall()
         if len(rows) != 2:
-            print("One account not found.")
+            print("Account missing.")
+            conn.rollback()
             return
 
-        data = {r[0]: (Decimal(r[1]), r[2]) for r in rows}
+        data = {r["account_no"]: r for r in rows}
 
-        if data[from_acc][1] != "active" or data[to_acc][1] != "active":
-            print("One account inactive.")
+        if data[from_acc]["status"] != "active" or data[to_acc]["status"] != "active":
+            print("Inactive account.")
+            conn.rollback()
             return
 
-        if data[from_acc][0] - amt < MIN_BALANCE:
-            print("Minimum balance rule violated.")
+        if Decimal(data[from_acc]["balance"]) - amt < MIN_BALANCE:
+            print("Minimum balance violation.")
+            conn.rollback()
             return
 
-        cursor.execute(
-            "UPDATE accounts SET balance = balance - %s WHERE account_no=%s",
-            (amt, from_acc)
-        )
-        cursor.execute(
-            "UPDATE accounts SET balance = balance + %s WHERE account_no=%s",
-            (amt, to_acc)
-        )
+        cursor.execute("UPDATE accounts SET balance=balance-%s WHERE account_no=%s", (amt, from_acc))
+        cursor.execute("UPDATE accounts SET balance=balance+%s WHERE account_no=%s", (amt, to_acc))
 
-        cursor.execute(
-            "INSERT INTO transactions(account_no,transaction_type,amount,from_account,to_account) "
-            "VALUES (%s,'transfer',%s,%s,%s)",
-            (from_acc, amt, from_acc, to_acc)
-        )
-
-        cursor.execute(
-            "INSERT INTO transactions(account_no,transaction_type,amount,from_account,to_account) "
-            "VALUES (%s,'transfer',%s,%s,%s)",
-            (to_acc, amt, from_acc, to_acc)
-        )
+        for acc in (from_acc, to_acc):
+            cursor.execute(
+                "INSERT INTO transactions(account_no,transaction_type,amount,from_account,to_account) "
+                "VALUES (%s,'transfer',%s,%s,%s)",
+                (acc, amt, from_acc, to_acc)
+            )
 
         conn.commit()
         print("✓ Transfer successful")
@@ -243,63 +246,54 @@ def fund_transfer():
         print("Transfer failed:", e)
 
 
-# ---------------- Transaction History ----------------
+# ---------------- History ----------------
 
 def transaction_history():
-    try:
-        acc_no = int(input("Account number: "))
-        cursor.execute(
-            "SELECT transaction_type,amount,transaction_date,from_account,to_account "
-            "FROM transactions WHERE account_no=%s "
-            "ORDER BY transaction_date DESC",
-            (acc_no,)
-        )
-        rows = cursor.fetchall()
+    acc_no = parse_int("Account number: ")
+    if not acc_no: return
 
-        if not rows:
-            print("No transactions.")
-            return
+    cursor.execute("SELECT 1 FROM accounts WHERE account_no=%s", (acc_no,))
+    if not cursor.fetchone():
+        print("Account not found.")
+        return
 
-        print("\nType        Amount      Date                  From  To")
-        print("-" * 60)
+    cursor.execute("""
+        SELECT transaction_type,amount,transaction_date,
+               COALESCE(from_account,'-') fa,
+               COALESCE(to_account,'-') ta
+        FROM transactions
+        WHERE account_no=%s
+        ORDER BY transaction_date DESC
+    """, (acc_no,))
 
-        for t, a, d, f, to in rows:
-            print(f"{t:<12}{Decimal(a):>10.2f}   {str(d):<20} {f or '-':<5} {to or '-'}")
+    rows = cursor.fetchall()
+    if not rows:
+        print("No transactions."); return
 
-    except Exception as e:
-        print("History fetch failed:", e)
+    print("\nType        Amount      Date                  From  To")
+    print("-"*60)
+    for r in rows:
+        print(f"{r['transaction_type']:<12}{Decimal(r['amount']):>10.2f}   "
+              f"{str(r['transaction_date']):<20} {r['fa']:<5} {r['ta']}")
 
 
 # ---------------- Search ----------------
 
 def search_menu():
     while True:
-        print("\nSearch by:")
-        print("1 Account No")
-        print("2 Name")
-        print("3 Phone")
-        print("4 Email")
-        print("5 Back")
+        print("\n1 AccNo  2 Name  3 Phone  4 Email  5 Back")
+        ch = parse_int("Choice: ")
+        if ch == 5: return
 
-        try:
-            ch = int(input("Choice: "))
-        except ValueError:
-            continue
-
-        if ch == 5:
-            return
-
-        field_map = {
-            1: ("a.account_no=%s", input("Account No: ")),
+        fields = {
+            1: ("a.account_no=%s", input("AccNo: ")),
             2: ("c.full_name LIKE %s", f"%{input('Name: ')}%"),
             3: ("c.phone=%s", input("Phone: ")),
-            4: ("c.email=%s", input("Email: "))
+            4: ("c.email=%s", input("Email: ").lower())
         }
+        if ch not in fields: continue
 
-        if ch not in field_map:
-            continue
-
-        cond, val = field_map[ch]
+        cond, val = fields[ch]
 
         cursor.execute(f"""
             SELECT a.account_no,c.full_name,c.phone,c.email,
@@ -309,51 +303,30 @@ def search_menu():
             WHERE {cond}
         """, (val,))
 
-        rows = cursor.fetchall()
-        if not rows:
-            print("No records.")
-            continue
-
-        for r in rows:
-            print(
-                r[0], r[1], r[2], r[3],
-                r[4], f"{Decimal(r[5]):.2f}", r[6],
-                sep=" | "
-            )
+        for r in cursor.fetchall():
+            print(r["account_no"], r["full_name"], r["phone"],
+                  r["email"], r["account_type"],
+                  f"{Decimal(r['balance']):.2f}", r["status"], sep=" | ")
 
 
-# ---------------- Main Menu ----------------
+# ---------------- Main Loop ----------------
 
-while True:
-    print("\n--- Banking Menu ---")
-    print("1 Create Account")
-    print("2 Deposit")
-    print("3 Withdrawal")
-    print("4 Transfer")
-    print("5 History")
-    print("6 Search")
-    print("7 Exit")
+try:
+    while True:
+        print("\n1 Create 2 Deposit 3 Withdraw 4 Transfer 5 History 6 Search 7 Exit")
+        c = parse_int("Choice: ")
+        if c == 1: create_account()
+        elif c == 2: deposit()
+        elif c == 3: withdrawal()
+        elif c == 4: fund_transfer()
+        elif c == 5: transaction_history()
+        elif c == 6: search_menu()
+        elif c == 7: break
 
-    try:
-        c = int(input("Choice: "))
-    except ValueError:
-        continue
+except KeyboardInterrupt:
+    print("\nInterrupted by user.")
 
-    if c == 1:
-        create_account()
-    elif c == 2:
-        deposit()
-    elif c == 3:
-        withdrawal()
-    elif c == 4:
-        fund_transfer()
-    elif c == 5:
-        transaction_history()
-    elif c == 6:
-        search_menu()
-    elif c == 7:
-        break
-
-cursor.close()
-conn.close()
-print("✓ DB closed")
+finally:
+    cursor.close()
+    conn.close()
+    print("✓ DB closed")
